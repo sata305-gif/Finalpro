@@ -1,0 +1,337 @@
+<!DOCTYPE html>  <html>  
+<head>  
+<meta charset="UTF-8">  
+<meta name="viewport" content="width=device-width, initial-scale=1.0">  <title>خريطة توزيع المياه</title>  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>  <style>  
+  
+html, body{  
+margin:0;  
+padding:0;  
+width:100%;  
+background:#0b0b0b;  
+color:white;  
+font-family:Arial;  
+text-align:center;  
+overflow-x:hidden;  
+}  
+  
+.title-box{  
+background:#111;  
+padding:12px;  
+margin:10px auto;  
+width:95%;  
+max-width:900px;  
+border-radius:10px;  
+border:1px solid #333;  
+}  
+  
+h2{ font-size:28px; margin:5px 0; }  
+  
+.credits{  
+font-size:18px;  
+color:#ddd;  
+line-height:1.6;  
+margin-top:8px;  
+}  
+  
+.bold{  
+font-weight:900;  
+color:#fff;  
+font-size:20px;  
+}  
+  
+button{  
+margin:5px;  
+padding:6px 10px;  
+background:#333;  
+color:white;  
+border:none;  
+border-radius:5px;  
+cursor:pointer;  
+}  
+  
+.map-container{  
+position:relative;  
+width:85%;  
+max-width:700px;  
+margin:10px auto;  
+transform-origin: top left;  
+border:2px solid #222;  
+}  
+  
+.map-container img{  
+width:100%;  
+height:auto;  
+display:block;  
+}  
+  
+/* ⭐ خطوط */  
+.lines{  
+position:absolute;  
+top:0;  
+left:0;  
+width:100%;  
+height:100%;  
+pointer-events:none;  
+z-index:0;  
+}  
+  
+/* 🔴 أحمر */  
+.line-red{  
+stroke:red;  
+stroke-width:1;  
+stroke-dasharray:6;  
+animation:flow 3s ease-in-out infinite;  
+}  
+  
+@keyframes flow{  
+0%{stroke-dashoffset:120; opacity:0.2;}  
+50%{opacity:0.8;}  
+100%{stroke-dashoffset:0; opacity:0.2;}  
+}  
+  
+/* النقاط */  
+.dot{  
+position:absolute;  
+transform:translate(-50%,-50%);  
+width:8px;  
+height:8px;  
+z-index:2;  
+animation:blink 1.5s infinite;  
+}  
+  
+@keyframes blink{  
+0%{opacity:0.6;}  
+50%{opacity:1;}  
+100%{opacity:0.3;}  
+}  
+  
+/* تكبير النقاط وقت التصدير */  
+.export-mode .dot{  
+width:16px !important;  
+height:16px !important;  
+}  
+  
+/* مربع الرموز */  
+.legend{  
+margin:10px auto;  
+text-align:center;  
+}  
+  
+.legend-box{  
+display:flex;  
+justify-content:center;  
+gap:25px;  
+margin-bottom:10px;  
+font-size:14px;  
+}  
+  
+.circle{  
+width:10px;  
+height:10px;  
+background:lime;  
+border-radius:50%;  
+display:inline-block;  
+margin-left:5px;  
+}  
+  
+.square{  
+width:10px;  
+height:10px;  
+background:red;  
+display:inline-block;  
+margin-left:5px;  
+}  
+  
+/* صورة Add */  
+.add-img{  
+width:100px;  
+margin-top:10px;  
+border:1px solid #333;  
+border-radius:8px;  
+display:block;  
+margin-left:auto;  
+margin-right:auto;  
+}  
+  
+/* label */  
+.label-temp{  
+position:absolute;  
+background:rgba(0,0,0,0.6);  
+color:white;  
+font-size:12px;  
+padding:3px 6px;  
+border-radius:5px;  
+pointer-events:none;  
+z-index:10;  
+}  
+  
+</style>  </head>  <body>  <div class="title-box">  
+<h2>خريطة توزيع المياه اليومية - مركز الدالية</h2>  <div class="credits">  
+فكرة وإخراج: <span class="bold">م. أيمن عبد الرزاق حسن</span><br>  
+تصميم وغرافيك: <span class="bold">م. سحر بسام عيسى</span>  
+</div>  
+</div>  <button onclick="zoomIn()">تكبير +</button>
+<button onclick="zoomOut()">تصغير -</button>
+<button onclick="exportImage()">تحميل صورة</button>
+
+<div class="filter">  
+<button onclick="setFilter('all')">الكل</button>  
+<button onclick="setFilter('منطقة')">مناطق</button>  
+<button onclick="setFilter('محطة')">محطات</button>  <div class="legend">  
+  <div class="legend-box">  
+    <div><span class="circle"></span> منطقة تتلقى مياه</div>  
+    <div><span class="square"></span> محطة عاملة</div>  
+  </div>    <img src="Add.jpg" class="add-img">  
+</div>  
+</div>  <div class="map-container" id="map">  <svg id="lines" class="lines" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+
+<img id="img" src="map.jpg">  </div>  <script>  
+  
+let points = [];  
+let scale = 1;  
+let filterType = "all";  
+  
+const map = document.getElementById("map");  
+const linesLayer = document.getElementById("lines");  
+  
+window.onload = function(){  
+  
+fetch("coor.xlsx")  
+.then(res => res.arrayBuffer())  
+.then(data => {  
+  
+const workbook = XLSX.read(data,{type:"array"});  
+const sheet = workbook.Sheets[workbook.SheetNames[0]];  
+  
+points = XLSX.utils.sheet_to_json(sheet);  
+  
+draw();  
+  
+});  
+  
+};  
+  
+function draw(){  
+  
+document.querySelectorAll(".dot").forEach(d=>d.remove());  
+document.querySelectorAll(".label-temp").forEach(l=>l.remove());  
+linesLayer.innerHTML = "";  
+  
+/* 🔴 محطات فقط */  
+let stations = points.filter(p => p.type === "محطة" && p.status === "نعم");  
+  
+for(let i=0;i<stations.length-1;i++){  
+  
+let a = stations[i];  
+let b = stations[i+1];  
+  
+let line = document.createElementNS("http://www.w3.org/2000/svg","line");  
+  
+line.setAttribute("x1", a.x);  
+line.setAttribute("y1", a.y);  
+line.setAttribute("x2", b.x);  
+line.setAttribute("y2", b.y);  
+  
+line.setAttribute("class","line-red");  
+  
+linesLayer.appendChild(line);  
+}  
+  
+/* ❌ الخطوط الخضراء محذوفة بالكامل */  
+  
+/* النقاط */  
+points.forEach(p=>{  
+  
+  
+if(!p || isNaN(p.x) || isNaN(p.y)) return;  
+if(filterType !== "all" && p.type !== filterType) return;  
+if(p.status !== "نعم") return;  
+  
+let dot = document.createElement("div");  
+dot.className = "dot";  
+  
+dot.style.left = p.x + "%";  
+dot.style.top = p.y + "%";  
+  
+dot.style.background = (p.type === "منطقة") ? "lime" : "red";  
+if(p.type === "منطقة"){  
+    dot.style.borderRadius = "50%"; // دائرة خضراء  
+}else{  
+    dot.style.borderRadius = "0";   // مربع أحمر  
+}  
+  
+/* بشيلي ثابت */  
+/* أسماء ثابتة */  
+if(  
+   p.type === "منطقة" &&  
+   (p.name === "بشيلي" || p.name === "ضهر برقة")  
+){  
+  
+let label = document.createElement("div");  
+label.className = "label-temp";  
+label.innerText = p.name;  
+  
+label.style.left = p.x + "%";  
+label.style.top = p.y + "%";  
+label.style.transform = "translate(10px,-50%)";  
+label.style.color = "lime";  
+label.style.opacity = "0.7";  
+  
+map.appendChild(label);  
+}  
+/* باقي المناطق عند النقر */  
+/* باقي المناطق عند النقر */  
+dot.onclick = function(){
+
+let label = document.createElement("div");
+label.className = "label-temp";
+label.innerText = p.name || "بدون اسم";
+
+label.style.left = p.x + "%";
+label.style.top = p.y + "%";
+label.style.transform = "translate(-50%,-120%)";
+
+map.appendChild(label);
+
+setTimeout(()=>{
+label.remove();
+}, 1200);
+
+};
+  
+
+  
+map.appendChild(dot);  
+  
+});  
+  
+}  
+  
+/* فلترة */  
+function setFilter(type){  
+filterType = type;  
+draw();  
+}  
+  
+/* zoom */  
+function zoomIn(){ scale+=0.1; map.style.transform=`scale(${scale})`; }  
+function zoomOut(){ scale-=0.1; if(scale<0.5) scale=0.5; map.style.transform=`scale(${scale})`; }  
+  
+/* export */  
+function exportImage(){  
+  
+html2canvas(map,{  
+backgroundColor:"#0b0b0b",  
+scale:2,  
+useCORS:true  
+}).then(canvas=>{  
+let a=document.createElement("a");  
+a.download="map.png";  
+a.href=canvas.toDataURL();  
+a.click();  
+});  
+  
+}  
+  
+</script>  </body>  
+</html>  
